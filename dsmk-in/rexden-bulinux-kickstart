@@ -1,0 +1,188 @@
+install
+<%= @mediapath %>
+<% if @host.params['rexden_repo'] %>
+repo --name=rexden --baseurl=<%= @host.params['rexden_repo'] %>/<%= @arch %>/RPMS
+<% else %>
+repo --name=rexden --baseurl=http://yum:P4dsmk+@www.bu.edu/dsmk/pkg/6/<%= @arch %>/RPMS
+<% end %>
+<% if @host.params['epel_url'] %>
+repo --name=epel --baseurl=<%= @host.params['epel_url'] %><%= @arch %>
+<% else %>
+# repo --name=epel --baseurl=http://nagini.rexden.us/cobbler/repo_mirror/epel6-<%= @arch %>
+repo --name=epel --baseurl=http://bulinux.bu.edu/epel/6/<%= @arch %>
+<% end %> 
+<% if @host.params['bulinux_url'] %>
+<% if @host.params['bulinux_url'] != "-" %>
+repo --name=bulinux --baseurl=<%= @host.params['bulinux_url'] %><%= @arch %>
+<% bulinux_pkg = 'bulinux-system' %>
+<% end %>
+<% else %>
+<% bulinux_pkg = 'bulinux-system' %>
+# repo --name=bulinux --baseurl=http://nagini.rexden.us/cobbler/repo_mirror/bulinux6-<%= @arch %>
+repo --name=bulinux --baseurl=http://bulinux.bu.edu/bulinux/6/<%= @arch %>
+<% end %> 
+<% if @host.params['tools_url'] %>
+repo --name=tools --baseurl=<%= @host.params['tools_url'] %>/<%= @arch %>
+<% end %>
+<% if @host.params['other_repo_url'] %>
+repo --name=<%= @host.params['other_repo_name'] %> --baseurl=<%= @host.params['other_repo_url'] %>
+<% end %> 
+<% if @host.params['other2_repo_url'] %>
+repo --name=<%= @host.params['other2_repo_name'] %> --baseurl=<%= @host.params['other2_repo_url'] %>
+<% end %> 
+lang en_US.UTF-8
+<%= "langsupport --default en_US.UTF-8 en_GB.UTF-8 en_US.UTF-8
+" if @osver < 5 -%>
+<%= "mouse generic3usb --device input/mice
+" if @osver == 3 -%>
+<% if @host.params['selinux_disabled'] %>
+selinux --disabled
+<% else %>
+selinux --enforcing
+<% end %>
+keyboard us
+skipx
+<% if @host.params['static'] %>
+network --bootproto static --device <%= @host.mac %> --hostname <%= @host %> --ip <%= @host.params['ipaddr'] %> --netmask <%= @host.params['netmask'] %> --gateway <%= @host.params['gateway'] %> --nameserver <%= @host.params['nameserver'] %>
+<% else %>
+network --bootproto <%= @static ? "static" : "dhcp" %> --hostname <%= @host %>
+<% end %>
+rootpw --iscrypted <%= root_pass %>
+sshpw --username=root <%= root_pass %> --iscrypted
+user --uid=23849 --name=dsmk --groups=wheel --iscrypted --password=$1$lf.01IJL$c4CBmwWIOPar.sQDxR0r//
+
+sshpw --username=inst $1$lf.01IJL$c4CBmwWIOPar.sQDxR0r// --iscrypted
+firewall <%= @host.params['firewall_args'] ? @host.params['firewall_args'] : '--enabled --port=22' %>
+<% if @host.params['authconfig_args'] %>
+authconfig <%= @host.params['authconfig_args'] %>
+<% else %>
+authconfig --useshadow --enablemd5 <%= @osver != 3 and @osver != 4 ? '--disablenis' : '' %>
+<% end %>
+timezone <%= @osver >= 5 ? 'America/New_York' : 'EDT' %>
+bootloader --location=mbr --append="nofb quiet splash=quiet " <%= grub_pass %>
+<% if @dynamic -%>
+%include /tmp/diskpart.cfg
+<% else -%>
+# local layout
+<%= @host.diskLayout %>
+<% end -%>
+text
+reboot
+
+%packages <% if @osver < 5 %> --resolvedeps <% end %>
+ntp
+<% if @osver == 5 -%>
+@core
+@base
+<% elsif @osver == 4 -%>
+device-mapper-multipath
+<% elsif @osver == 3 and @arch == "i386" -%>
+ethereal
+<% end -%>
+<% if @host.params['epel_url'] %>
+epel-release
+<% end %> 
+<% if bulinux_pkg %>
+<%= bulinux_pkg %>
+<% end %>
+<% if @host.params['tools_rpms'] %>
+# RPMS to support <%= @host.params['tools_url'] %>
+<% for rpm in @host.params['tools_rpms'].split(' ') %><%= rpm %>
+<% end %>
+<% end %>
+<% if @host.params['manual_release_pkgs'] %>
+# need to put any release rpms in other_packages
+<% else %>
+<% if @host.params['other_repo_name'] %>
+# other_repo_name release package
+<%= @host.params['other_repo_name'] %>
+<% end %> 
+<% if @host.params['other2_repo_name'] %>
+<%= @host.params['other2_repo_name'] %>
+<% end %> 
+<% end %>
+<% if @host.params['rexden_pkg'] %>
+<%= @host.params['rexden_pkg'] %>
+<% else %>
+rexden-common
+<% end %>
+
+<% if @host.params['other_packages'] %>
+<%= @host.params['other_packages'] %>
+<% end %> 
+
+<% if @host.params['ipa_pw'] %>
+# need ipa-client library to join network
+ipa-client
+<% end %>
+
+<% if @dynamic -%>
+%pre
+<%= @host.diskLayout %>
+<% end -%>
+
+%post --log=/root/install-post.log
+#changing to VT 3 that we can see whats going on....
+/usr/bin/chvt 3
+#update local time
+echo "updating system time"
+/usr/sbin/ntpdate -sub ntp
+/usr/sbin/hwclock --systohc
+
+logger "Starting anaconda <%= @host %> postinstall"
+
+
+# update all the base packages from the updates repository
+yum -t -y -e 0 update
+
+<% if @host.params['skip_puppet'] %>
+# Not installing puppet configuration
+<% else %>
+
+# add the puppetlabs repo
+rpm -ivh http://yum.puppetlabs.com/el/6/products/<%= @arch %>/puppetlabs-release-6-7.noarch.rpm
+
+# and add the puppet and ruby-shadow package
+yum -t -y -e 0 install puppet
+
+echo "Configuring puppet"
+cat > /etc/puppet/puppet.conf << EOF
+<%= snippets "puppet.conf" -%>
+EOF
+
+# Setup puppet to run on system reboot
+/sbin/chkconfig --level 345 puppet on
+
+# Disable most things. Puppet will activate these if required.
+echo "Disabling various system services"
+<% %w{autofs gpm sendmail cups iptables ip6tables auditd arptables_jf xfs pcmcia isdn rawdevices hpoj bluetooth openibd avahi-daemon avahi-dnsconfd hidd hplip pcscd restorecond mcstrans rhnsd yum-updatesd}.each do |service| -%>
+  /sbin/chkconfig --level 345 <%= service %> off 2>/dev/null
+<% end -%>
+
+# how older puppets did this
+#/usr/sbin/puppetd --config /etc/puppet/puppet.conf -o --tags no_such_tag --server <%= @host.puppetmaster %>  --no-daemonize
+# Puppet 3 version
+/usr/bin/puppet agent --config /etc/puppet/puppet.conf -o --tags no_such_tag --server <%= @host.puppetmaster %>  --no-daemonize
+<% end -%>
+
+<% if @host.params['ipa_pw'] %>
+/bin/hostname > /tmp/hostname.txt
+
+# Run ipa-client install script
+/usr/sbin/ipa-client-install --domain=<%= @host.params['ipa_domain'] %> --mkhomedir   -w "<%= @host.params['ipa_pw'] %>" --realm=<%= @host.params['ipa_realm'] %>   --server=<%= @host.params['ipa_server'] %> --unattended
+  
+# Copy our ntp config into place (for now, this should be handled by a mature puppet config
+if [ -f /etc/ntp/ntp.conf.rexden_ipa ]; then
+  mv /etc/ntp/ntp.conf /etc/ntp/ntp.conf.ipa
+  cp -p /etc/ntp/ntp.conf.rexden_ipa /etc/ntp.ntp.conf
+  ntpdate
+fi
+
+<% end %>
+
+sync
+
+# Inform the build system that we are done.
+echo "Informing Foreman that we are built"
+wget -q -O /dev/null --no-check-certificate <%= foreman_url %>
+exit 0

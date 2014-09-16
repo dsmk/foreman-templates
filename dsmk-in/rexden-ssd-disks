@@ -1,0 +1,140 @@
+#Dynamic - this line tells Foreman that the partitioning info is dynamic
+#
+DIR="/sys/block"
+
+# minimum size of hard drive needed specified in GIGABYTES
+MINSIZE=40
+MINDSIZE=400
+# mirror disk size
+MDSIZE="<%= @host.params['root_lvm_size'] %>"
+MDDSIZE="<%= @host.params['data_lvm_size'] %>"
+
+RD=""
+RD2=""
+DD=""
+DD2=""
+
+SWAP="<%= @host.params['swap_size'] %>"
+if [ "x$SWAP" = x ]; then
+  SWAP=4096
+fi
+
+# /sys/block/*/size is in 512 byte chunks
+for DEV in vda vdb vdc vdd vde vdf sda sdb sdc sdd sde sdf hda hdb; do
+  if [ -d $DIR/$DEV ]; then
+    REM=`cat $DIR/$DEV/removable`
+    if (( $REM == 0 )); then
+      echo $DEV
+      SZ=`cat $DIR/$DEV/size`
+      GB=$(($SZ/2**21))
+      if [ $GB -gt $MINDSIZE ]; then
+        if [ -x $DD ]; then
+          DD=$DEV
+        elif [ -x $DD2 ]; then
+          DD2=$DEV
+        fi
+      elif [ $GB -gt $MINSIZE ]; then
+        echo "$(($SZ/2**21))"
+        if [ -z $RD ]; then
+          RD=$DEV
+        elif [ -z $RD2 ]; then
+          RD2=$DEV
+        fi
+      fi
+    fi
+  fi
+done
+
+echo "ROOT=$RD"
+echo "ROOT2=$RD2"
+echo "DATA=$DD"
+echo "DATA2=$DD2"
+wget "http://hagrid.rexden.us/unattended/debug:root=$RD;root2=$RD2;data=$DD;data2=$DD2"
+
+if [ $GB -lt 70 ]; then
+
+  # drives smaller than 100GB
+  cat <<EOF >/tmp/diskpart.cfg
+zerombr
+clearpart --all --initlabel
+# /boot
+part raid.00 --size=200 --ondisk=$RD --asprimary 
+part raid.01 --size=200 --ondisk=$RD2 --asprimary
+raid /boot --fstype ext3 --level=RAID1 --device=md0 raid.00 raid.01
+# root lvm chunk
+part raid.10 --size=20000 --ondisk=$RD 
+part raid.11 --size=20000 --ondisk=$RD2
+raid pv.10 --fstype "physical volume (LVM)" --level=RAID1 --device=md1 raid.10 raid.11                                       
+# rest of disk is lvm2 chunk
+part raid.20 --size=20000 --ondisk=$RD
+part raid.21 --size=20000 --ondisk=$RD2
+raid pv.20 --fstype "physical volume (LVM)" --level=RAID1 --device=md2 raid.20 raid.21                                       
+# everything else becomes a big lvm disk
+part pv.40 --size=100 --grow --ondisk=$RD
+part pv.41 --size=100 --grow --ondisk=$RD2
+
+EOF
+
+else
+  # drives 240GB and larger
+
+  cat <<EOF >/tmp/diskpart.cfg
+#bootloader --location=mbr --boot-drive=$RD --append="nofb quiet splash=quiet " 
+zerombr 
+#yes
+clearpart --all --initlabel
+# /boot
+part raid.00 --size=200 --ondisk=$RD --asprimary 
+part raid.01 --size=200 --ondisk=$RD2 --asprimary
+raid /boot --fstype ext3 --level=RAID1 --device=md0 raid.00 raid.01
+# root lvm chunk
+part raid.10 --size=30000 --ondisk=$RD 
+part raid.11 --size=30000 --ondisk=$RD2
+raid pv.10 --fstype "physical volume (LVM)" --level=RAID1 --device=md1 raid.10 raid.11                                       
+# rest of disk is lvm2 chunk
+part raid.20 --size=$MDSIZE --ondisk=$RD
+part raid.21 --size=$MDSIZE --ondisk=$RD2
+raid pv.20 --fstype "physical volume (LVM)" --level=RAID1 --device=md2 raid.20 raid.21                                       
+# everything else becomes a big lvm disk
+part pv.40 --size=100 --grow --ondisk=$RD
+part pv.41 --size=100 --grow --ondisk=$RD2
+EOF
+
+  if [ "x$DD2" != "x" ]; then
+    cat <<EOF >>/tmp/diskpart.cfg
+part raid.50 --size=$MDDSIZE --ondisk=$DD
+part raid.51 --size=$MDDSIZE --ondisk=$DD2
+raid pv.50 --fstype "physical volume (LVM)" --level=RAID1 --device=md5 raid.50 raid.51
+
+part pv.42 --size=100 --grow --ondisk=$DD
+part pv.43 --size=100 --grow --ondisk=$DD2
+EOF
+
+  fi
+
+fi
+
+cat <<EOF >>/tmp/diskpart.cfg
+volgroup vg01 pv.10
+logvol / --fstype ext4 --name=root --vgname=vg01 --size=10000
+logvol swap --fstype swap --name=swap --vgname=vg01 --size=$SWAP
+logvol /home --fstype ext4 --name=home --vgname=vg01 --size=3000
+
+EOF
+
+if [ "x$DD2" != "x" ]; then
+  cat <<EOF >>/tmp/diskpart.cfg
+volgroup ssd02 pv.20 
+volgroup vg02 pv.50
+
+volgroup ssd03 pv.40 pv.41 
+volgroup vg03 pv.42 pv.43
+EOF
+else
+  cat <<EOF >>/tmp/diskpart.cfg
+volgroup vg02 pv.20
+
+volgroup vg03 pv.40 pv.41
+EOF
+fi
+# done
