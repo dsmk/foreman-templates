@@ -30,7 +30,7 @@ lang en_US.UTF-8
 selinux --enforcing
 keyboard us
 skipx
-network --bootproto <%= @host.params['static'] ? "static --ip=#{@host.ip} --netmask=#{@host.subnet.mask} --gateway=#{@host.subnet.gateway} --nameserver=#{[@host.subnet.dns_primary,@host.subnet.dns_secondary].reject{|n| n.blank?}.join(',')}" : 'dhcp' %> --hostname <%= @host %>
+network --bootproto <%= @host.params['static'] ? "static --device=#{@host.mac} --ip=#{@host.ip} --netmask=#{@host.subnet.mask} --gateway=#{@host.subnet.gateway} --nameserver=#{[@host.subnet.dns_primary,@host.subnet.dns_secondary].reject{|n| n.blank?}.join(',')}" : 'dhcp' %> --hostname <%= @host %>
 rootpw --iscrypted <%= root_pass %>
 user --groups=wheel --name=dsmk --password=<%= root_pass %> --iscrypted --uid=23849
 firewall --<%= os_major >= 6 ? 'service=' : '' %>ssh
