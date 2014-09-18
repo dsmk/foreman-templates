@@ -35,7 +35,7 @@ rootpw --iscrypted <%= root_pass %>
 user --groups=wheel --name=dsmk --password=<%= root_pass %> --iscrypted --uid=23849
 firewall --<%= os_major >= 6 ? 'service=' : '' %>ssh
 authconfig --useshadow --passalgo=sha256 --kickstart
-timezone --utc <%= @host.params['time-zone'] || 'UTC' %>
+timezone --utc <%= @host.params['time-zone'] || 'America/New_York' %>
 <% if rhel_compatible && os_major > 4 -%>
 services --disabled gpm,sendmail,cups,pcmcia,isdn,rawdevices,hpoj,bluetooth,openibd,avahi-daemon,avahi-dnsconfd,hidd,hplip,pcscd
 <% end -%>
