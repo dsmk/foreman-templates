@@ -107,6 +107,8 @@ if [ "x$DDISKS" != "x" ]; then
     FIRST=`echo $pair | awk -F: '{ print $1 }' `
     SECOND=`echo $pair | awk -F: '{ print $2 }' `
     cat <<EOF >>/tmp/diskpart.cfg
+# ##########
+# ${NUM} disk1=$FIRST disk2=$SECOND
 part raid.${NUM}0 --size=$MDDSIZE --ondisk=$FIRST
 part raid.${NUM}1 --size=$MDDSIZE --ondisk=$SECOND
 raid pv.${NUM}0 --fstype "physical volume (LVM)" --level=RAID1 --device=md${NUM} raid.${NUM}0 raid.${NUM}1
@@ -114,8 +116,8 @@ raid pv.${NUM}0 --fstype "physical volume (LVM)" --level=RAID1 --device=md${NUM}
 part pv.${NUM}2 --size=100 --grow --ondisk=$FIRST
 part pv.${NUM}3 --size=100 --grow --ondisk=$SECOND
 EOF
-    MPV="$MPV ${NUM}0"
-    PV="${PV} ${NUM}2 ${NUM}3"
+    MPV="$MPV pv.${NUM}0"
+    PV="${PV} pv.${NUM}2 pv.${NUM}3"
     NUM=`expr $NUM + 1`
   done
 
