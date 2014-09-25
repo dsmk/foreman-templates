@@ -35,8 +35,8 @@ if [ "x$SWAP" = x ]; then
   SWAP=4096
 fi
 
-# boolean indicating whether first or second
-FIRST=/bin/true
+# if set then first disk - can't use /bin/true in installer space
+FIRST=1
 
 # we presume all disks of the larger size are the same size
 DDISKS=
@@ -50,12 +50,12 @@ for DEV in vda vdb vdc vdd vde vdf sda sdb sdc sdd sde sdf sdg sdh hda hdb; do
       SZ=`cat $DIR/$DEV/size`
       GB=$(($SZ/2**21))
       if [ $GB -gt $MINDSIZE ]; then
-        if $FIRST ; then
+        if [ "x$FIRST" != "x" ] ; then
           DDISKS="$DDISKS $DEV"
-          FIRST=/bin/false
+          FIRST=
         else
           DDISKS="${DDISKS}:$DEV"
-          FIRST=/bin/true
+          FIRST=1
         fi
       elif [ $GB -gt $MINSIZE ]; then
         echo "$(($SZ/2**21))"
