@@ -22,6 +22,7 @@ oses:
   proxy_string = @host.params['http-proxy'] ? " --proxy=http://#{@host.params['http-proxy']}:#{@host.params['http-proxy-port']}" : ''
   puppet_enabled = pm_set || @host.params['force-puppet']
   salt_enabled = @host.params['salt_master'] ? true : false
+  ansible_pull_enabled = @host.params['ansible_playbook'] ? true : false
   section_end = (rhel_compatible && os_major <= 5) ? '' : '%end'
 %>
 install
@@ -139,7 +140,7 @@ EOF
 /usr/bin/puppet agent --config /etc/puppet/puppet.conf -o --tags no_such_tag <%= @host.puppetmaster.blank? ? '' : "--server #{@host.puppetmaster}" %> --no-daemonize
 <% end -%>
 
-<% if @host.params['ansible'] %>
+<% if ansible_pull_enabled %>
 # this sets up the ansible-pull model from the git repository
 #
 yum -t -y -e 0 ansible git 
@@ -147,7 +148,9 @@ rpm -ivh http://yum:P4dsmk+@www.bu.edu/dsmk/pkg/rexden-ansibleup-1.0-2.noarch.rp
 # we want to support different values
 cat <<EOF >/etc/sysconfig/ansible-up.d/_sys.cfg
 branch=<%= @host.params['ansible_branch'] || 'prod' %>
-playbook=<%= @host.params['ansible_playbook'] || '' %>
+<% if @host.params['ansible_playbook'] != '-' %>
+playbook=<%= @host.params['ansible_playbook'] %>
+<% end %>
 EOF
 <% end %>
 
