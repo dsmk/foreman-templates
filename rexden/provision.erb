@@ -143,7 +143,7 @@ EOF
 <% if ansible_pull_enabled %>
 # this sets up the ansible-pull model from the git repository
 #
-yum -t -y -e 0 ansible git 
+yum -t -y -e 0 install ansible git 
 rpm -ivh http://yum:P4dsmk+@www.bu.edu/dsmk/pkg/rexden-ansibleup-1.0-2.noarch.rpm 
 # we want to support different values
 cat <<EOF >/etc/sysconfig/ansible-up.d/_sys.cfg
