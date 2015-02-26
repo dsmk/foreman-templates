@@ -1,0 +1,35 @@
+<%#
+kind: ptable
+name: Rexden Simple Partition
+oses:
+- CentOS 5
+- CentOS 6
+- CentOS 7
+- Fedora 16
+- Fedora 17
+- Fedora 18
+- Fedora 19
+- Fedora 20
+- RedHat 5
+- RedHat 6
+%>
+zerombr yes
+clearpart --all --initlabel
+
+part /boot --fstype=ext3 --asprimary --size=300 --ondisk=sda
+# rest of the disk is lvm
+part pv.10 --fstype "physical volume (LVM)" --size=100 --grow --ondisk=sda
+
+volgroup vg01 pv.10
+
+# logical volumes
+<% if @host.params['swap-size'] %>
+logvol swap --fstype swap --name=swap --vgname=vg01 --size=<%= @host.params['swap-size'] %>
+<% else %>
+logvol swap --fstype swap --name=swap --vgname=vg01 --size=2048
+<% end %>
+<% if @host.params['root-size'] %>
+logvol / --fstype x --name=root --vgname=vg01 --size=<%= @host.params['root-size'] %>
+<% else %>
+logvol / --fstype x --name=root --vgname=vg01 --size=100 --grow
+<% end %>
