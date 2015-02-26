@@ -14,6 +14,8 @@ oses:
 - RedHat 6
 %>
 zerombr
+ignoredisk --only-use=sda
+
 clearpart --all --initlabel
 
 part /boot --fstype=ext3 --asprimary --size=300 --ondisk=sda
