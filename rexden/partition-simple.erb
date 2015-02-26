@@ -29,7 +29,7 @@ logvol swap --fstype swap --name=swap --vgname=vg01 --size=<%= @host.params['swa
 logvol swap --fstype swap --name=swap --vgname=vg01 --size=2048
 <% end %>
 <% if @host.params['root-size'] %>
-logvol / --fstype x --name=root --vgname=vg01 --size=<%= @host.params['root-size'] %>
+logvol / --fstype xfs --name=root --vgname=vg01 --size=<%= @host.params['root-size'] %>
 <% else %>
-logvol / --fstype x --name=root --vgname=vg01 --size=100 --grow
+logvol / --fstype xfs --name=root --vgname=vg01 --size=100 --grow
 <% end %>
