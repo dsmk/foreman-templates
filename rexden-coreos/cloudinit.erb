@@ -1,0 +1,43 @@
+<%#
+kind: user_data
+name: CoreOS UserData default
+oses:
+- CentOS 4
+- CentOS 5
+- CentOS 6
+- CentOS 7
+- Fedora 16
+- Fedora 17
+- Fedora 18
+- Fedora 19
+- Debian 6.0
+- Debian 7.0
+- Ubuntu 10.04
+- Ubuntu 12.04
+- Ubuntu 13.04
+-%>
+#cloud-config
+hostname: <%= @host.shortname %>
+fqdn: <%= @host %>
+ssh_authorized_keys:
+ - ssh-rsa XXX
+manage_etc_hosts: true
+
+<%# Contact Foreman to confirm instance is built -%>
+phone_home:
+ url: <%= foreman_url('built') %>
+ post: []
+ tries: 10
+
+coreos:
+  units:
+    - name: etcd.service
+      command: start
+    - name: fleet.service
+      command: start
+  etcd:
+  name: <%= @host.shortname %>
+    # generate a new token for each unique cluster from https://discovery.etcd.io/new?size=3
+    # specify the initial size of your cluster with ?size=X
+    <%# this should be a parameter %>
+    discovery: https://discovery.etcd.io/6bfcbd017223eb01dd59d77ccd3625a7
