@@ -1,0 +1,30 @@
+<%#
+kind: user_data
+name: Linux user_data 
+oses:
+- Centos 7
+%>
+<%-
+    powershell = '%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Unrestricted -NoLogo -NoProfile'
+  -%>
+---
+identity:
+  Sysprep:
+    userData:
+      computerName: <%= @host.shortname %>
+      fullName: 'IT'
+      orgName: 'Rexden B&B'
+      nicSettingMap:
+        - adapter:
+            dnsDomain: <%= @host.domain %>
+          dnsServerList:
+              - <%= @host.subnet.dns_primary %>
+          gateway:
+              - <%= @host.subnet.gateway %>
+          ip: <%= @host.ip %>
+          subnetMask: <%= @host.subnet.mask %>
+      globalIPSettings:
+        dnsServerList:
+          - <%= @host.subnet.dns_primary %>
+        dnsSuffixList:
+          - <%= @host.domain %>
