@@ -3,28 +3,31 @@ kind: user_data
 name: Linux user_data 
 oses:
 - Centos 7
+- Centos 7.1
+- RedHat 7.1
 %>
-<%-
-    powershell = '%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Unrestricted -NoLogo -NoProfile'
-  -%>
 ---
 identity:
-  Sysprep:
-    userData:
-      computerName: <%= @host.shortname %>
-      fullName: 'IT'
-      orgName: 'Rexden B&B'
-      nicSettingMap:
-        - adapter:
-            dnsDomain: <%= @host.domain %>
-          dnsServerList:
-              - <%= @host.subnet.dns_primary %>
-          gateway:
-              - <%= @host.subnet.gateway %>
-          ip: <%= @host.ip %>
-          subnetMask: <%= @host.subnet.mask %>
-      globalIPSettings:
-        dnsServerList:
-          - <%= @host.subnet.dns_primary %>
-        dnsSuffixList:
-          - <%= @host.domain %>
+  LinuxPrep:
+    domain: <%= @host.domain %>
+    hostName: <%= @host.shortname %>
+    hwClockUTC: true
+    timeZone: <%= @host.params['time-zone'] || 'EST' %>
+
+nicSettingMap:
+<% @host.interfaces.each do |interface| %>
+  - adapter:
+     dnsDomain: <%= interface.domain %>
+     dnsServerList:
+       - <%= interface.subnet.dns_primary %>
+       - <%= interface.subnet.dns_secondary %>
+     gateway:
+       - <%= interface.subnet.gateway %>
+     ip: <%= interface.ip %>
+     subnetMask: <%= interface.subnet.mask %>
+<% end %>
+
+# globalIPSettings:
+globalIPSettings:
+  #dnsServerList: [ <%= @host.subnet.dns_primary %> ]
+  dnsSuffixList: [ <%= @host.domain %> ]
