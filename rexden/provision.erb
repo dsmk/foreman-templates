@@ -2,16 +2,25 @@
 kind: provision
 name: Kickstart default
 oses:
-- CentOS 4
-- CentOS 5
-- CentOS 6
-- CentOS 7
-- CentOS 7.0
-- Fedora 16
-- Fedora 17
-- Fedora 18
-- Fedora 19
-- Fedora 20
+- CentOS
+- Fedora
+%>
+<%#
+This template accepts the following parameters:
+- lang: string (default="en_US.UTF-8")
+- selinux-mode: string (default="enforcing")
+- keyboard: string (default="us")
+- time-zone: string (default="UTC")
+- http-proxy: string (default="")
+- http-proxy-port: string (default="")
+- force-puppet: boolean (default=false)
+- enable-epel: boolean (default=true)
+- enable-puppetlabs-repo: boolean (default=false)
+- enable-puppetlabs-pc1-repo: boolean (default=false)
+- salt_master: string (default=undef)
+- ntp-server: string (default="0.fedora.pool.ntp.org")
+- bootloader-append: string (default="nofb quiet splash=quiet")
+- disable-firewall: boolean (default=false)
 %>
 <%
   rhel_compatible = @host.operatingsystem.family == 'Redhat' && @host.operatingsystem.name != 'Fedora'
@@ -19,52 +28,78 @@ oses:
   realm_compatible = (@host.operatingsystem.name == "Fedora" && os_major >= 20) || (rhel_compatible && os_major >= 7)
   # safemode renderer does not support unary negation
   pm_set = @host.puppetmaster.empty? ? false : true
-  proxy_string = @host.params['http-proxy'] ? " --proxy=http://#{@host.params['http-proxy']}:#{@host.params['http-proxy-port']}" : ''
+  proxy_uri = @host.params['http-proxy'] ? "http://#{@host.params['http-proxy']}:#{@host.params['http-proxy-port']}" : nil
+  proxy_string = proxy_uri ? " --proxy=#{proxy_uri}" : ''
   puppet_enabled = pm_set || @host.params['force-puppet']
   salt_enabled = @host.params['salt_master'] ? true : false
+  chef_enabled = @host.respond_to?(:chef_proxy) && @host.chef_proxy
   ansible_pull_enabled = @host.params['ansible_playbook'] ? true : false
   section_end = (rhel_compatible && os_major <= 5) ? '' : '%end'
 %>
 install
 <%= @mediapath %><%= proxy_string %>
-lang en_US.UTF-8
-selinux --enforcing
-keyboard us
+lang <%= @host.params['lang'] || 'en_US.UTF-8' %>
+selinux --<%= @host.params['selinux-mode'] || @host.params['selinux'] || 'enforcing' %>
+keyboard <%= @host.params['keyboard'] || 'us' %>
 skipx
-network --bootproto <%= @host.params['static'] ? "static --device=#{@host.mac} --ip=#{@host.ip} --netmask=#{@host.subnet.mask} --gateway=#{@host.subnet.gateway} --nameserver=#{[@host.subnet.dns_primary,@host.subnet.dns_secondary].reject{|n| n.blank?}.join(',')}" : 'dhcp' %> --hostname <%= @host %>
+
+<% subnet = @host.subnet -%>
+<% if subnet.respond_to?(:dhcp_boot_mode?) -%>
+  <% dhcp = subnet.dhcp_boot_mode? && ! @static -%>
+<% else -%>
+  <% dhc = ! @static -%>
+<% end %>
+network --bootproto <%= dhcp ? 'dhcp' : "static --ip=#{@host.ip} --netmask=#{subnet.mask} --gateway=#{subnet.gateway} --nameserver=#{ [subnet.dns_primary, subnet.dns_secondary].join(',') }" %> --hostname <%= @host %><%= os_major >=6 ? " --device=#{@host.mac}" : '' %>
 rootpw --iscrypted <%= root_pass %>
 user --groups=wheel --name=dsmk --password=<%= root_pass %> --iscrypted --uid=23849
-firewall --<%= os_major >= 6 ? 'service=' : '' %>ssh
-authconfig --useshadow --passalgo=sha256 --kickstart
+<% if @host.param_true?('disable-firewall') -%>
+firewall --disable
+<% else -%>
+  firewall --<%= os_major >= 6 ? 'service=' : '' %>ssh
+<% end -%>
+  authconfig --useshadow --passalgo=<%= @host.operatingsystem.password_hash || 'sha256' %> --kickstart
 timezone --utc <%= @host.params['time-zone'] || 'America/New_York' %>
 <% if rhel_compatible && os_major > 4 -%>
 services --disabled gpm,sendmail,cups,pcmcia,isdn,rawdevices,hpoj,bluetooth,openibd,avahi-daemon,avahi-dnsconfd,hidd,hplip,pcscd
 <% end -%>
 
 <% if realm_compatible && @host.info["parameters"]["realm"] && @host.otp && @host.realm && @host.realm.realm_type == "Active Directory" -%>
-realm join --one-time-password='<%= @host.otp %>' <%= @host.realm %>
+realm join --one-time-password='<%= @host.otp || "$HOST[OTP]" %>' <%= @host.realm %>
 <% end -%>
 
 <% if @host.operatingsystem.name == 'Fedora' -%>
 repo --name=fedora-everything --mirrorlist=https://mirrors.fedoraproject.org/metalink?repo=fedora-<%= @host.operatingsystem.major %>&arch=<%= @host.architecture %><%= proxy_string %>
-<% if puppet_enabled && @host.params['enable-puppetlabs-repo'] && @host.params['enable-puppetlabs-repo'] == 'true' -%>
+<% if puppet_enabled -%>
+<% if @host.param_true?('enable-puppetlabs-repo') -%>
 repo --name=puppetlabs-products --baseurl=http://yum.puppetlabs.com/fedora/f<%= @host.operatingsystem.major %>/products/<%= @host.architecture %><%= proxy_string %>
 repo --name=puppetlabs-deps --baseurl=http://yum.puppetlabs.com/fedora/f<%= @host.operatingsystem.major %>/dependencies/<%= @host.architecture %><%= proxy_string %>
 <% end -%>
+<% if @host.param_true?('enable-puppetlabs-pc1-repo') -%>
+repo --name=puppetlabs-pc1 --baseurl=http://yum.puppetlabs.com/fedora/f<%= @host.operatingsystem.major %>/PC1/<%= @host.architecture %><%= proxy_string %>
+<% end -%>
+<% end %>
 <% elsif rhel_compatible && os_major > 4 -%>
-repo --name="EPEL" --mirrorlist=https://mirrors.fedoraproject.org/metalink?repo=epel-<%= @host.operatingsystem.major %>&arch=<%= @host.architecture %><%= proxy_string %>
-<% if puppet_enabled && @host.params['enable-puppetlabs-repo'] && @host.params['enable-puppetlabs-repo'] == 'true' -%>
+<% unless @host.param_false?('enable-epel') -%>
+  repo --name="EPEL" --mirrorlist=https://mirrors.fedoraproject.org/metalink?repo=epel-<%= @host.operatingsystem.major %>&arch=<%= @host.architecture %><%= proxy_string %>
+<% end %>
+<% if puppet_enabled -%>
+<% if @host.param_true?('enable-puppetlabs-repo') -%>
 repo --name=puppetlabs-products --baseurl=http://yum.puppetlabs.com/el/<%= @host.operatingsystem.major %>/products/<%= @host.architecture %><%= proxy_string %>
 repo --name=puppetlabs-deps --baseurl=http://yum.puppetlabs.com/el/<%= @host.operatingsystem.major %>/dependencies/<%= @host.architecture %><%= proxy_string %>
+<% end -%>
+<% if @host.param_true('enable-puppetlabs-pc1') -%>
+repo --name=puppetlabs-pc1 --baseurl=http://yum.puppetlabs.com/el/<%= @host.operatingsystem.major %>/PC1/<%= @host.architecture %><%= proxy_string %>
+<% end %>
 <% end -%>
 <% end -%>
 
 <% if @host.operatingsystem.name == 'Fedora' and os_major <= 16 -%>
 # Bootloader exception for Fedora 16:
-bootloader --append="nofb quiet splash=quiet <%=ks_console%>" <%= grub_pass %>
+bootloader --append="<%= @host.params['bootloader-append'] || 'nofb quiet splash=quiet' %> <%=ks_console%>" <%= grub_pass %>
 part biosboot --fstype=biosboot --size=1
 <% else -%>
-bootloader --location=mbr --append="nofb quiet splash=quiet" <%= grub_pass %>
+  bootloader --location=mbr --append="<%= @host.params['bootloader-append'] || 'nofb quiet splash=quiet' %>" <%= grub_pass %>
+<% end -%>
 <% end -%>
 
 <% if @dynamic -%>
@@ -74,7 +109,11 @@ bootloader --location=mbr --append="nofb quiet splash=quiet" <%= grub_pass %>
 <% end -%>
 
 text
-reboot
+<% if @host.respond_to?(:bootdisk_build?) && @host.bootdisk_build? %>
+  reboot --eject
+<% else -%>
+  reboot
+<% end -%>
 
 %packages
 yum
@@ -82,11 +121,19 @@ dhclient
 ntp
 wget
 @Core
-epel-release
-<% if puppet_enabled %>
-puppet
-<% if @host.params['enable-puppetlabs-repo'] && @host.params['enable-puppetlabs-repo'] == 'true' -%>
+<% if os_major >= 6 -%>
+  redhat-lsb-core
+<% end -%>
+<% if rhel_compatible && os_major > 4 && !@host.param_false?('enable-epel') -%>
+    epel-release
+<% end -%>
+  <% if puppet_enabled %>
+<%= @host.param_true?('enable-puppetlabs-pc1-repo') ? 'puppet-agent' : 'puppet' %>
+<% if @host.param_true?('enable-puppetlabs-repo') -%>
 puppetlabs-release
+<% end -%>
+<% if @host.param_true?('enable-puppetlabs-pc1-repo') -%>
+puppetlabs-release-pc1
 <% end -%>
 <% end -%>
 <% if salt_enabled %>
@@ -116,6 +163,10 @@ exec < /dev/tty3 > /dev/tty3
 #changing to VT 3 so that we can see whats going on....
 /usr/bin/chvt 3
 (
+<% if subnet.respond_to?(:dhcp_boot_mode?) -%>
+<%= snippet 'kickstart_networking_setup' %>
+<% end -%>
+
 #update local time
 echo "updating system time"
 /usr/sbin/ntpdate -sub <%= @host.params['ntp-server'] || '0.fedora.pool.ntp.org' %>
@@ -125,19 +176,30 @@ echo "updating system time"
 <%= snippet "freeipa_register" %>
 <% end -%>
 
+<% if proxy_uri -%>
+# Yum proxy
+echo 'proxy = <%= proxy_uri %>' >> /etc/yum.conf
+<% end -%>
+
 # update all the base packages from the updates repository
-yum -t -y -e 0 update
+if [ -f /usr/bin/dnf ]; then
+  dnf -y update
+else
+  yum -t -y update
+fi
+
+<%= snippet('remote_execution_ssh_keys') %>
+
+<% if chef_enabled %>
+<%= snippet 'chef_client' %>
+<% end -%>
 
 <% if puppet_enabled %>
-echo "Configuring puppet"
-cat > /etc/puppet/puppet.conf << EOF
-<%= snippet 'puppet.conf' %>
-EOF
+<%= snippet 'puppet_setup' %>
+<% end -%>
 
-# Setup puppet to run on system reboot
-/sbin/chkconfig --level 345 puppet on
-
-/usr/bin/puppet agent --config /etc/puppet/puppet.conf -o --tags no_such_tag <%= @host.puppetmaster.blank? ? '' : "--server #{@host.puppetmaster}" %> --no-daemonize
+<% if salt_enabled %>
+<%= snippet 'saltstack_setup' %>
 <% end -%>
 
 <% if ansible_pull_enabled %>
@@ -154,21 +216,24 @@ playbook=<%= @host.params['ansible_playbook'] %>
 EOF
 <% end %>
 
-<% if salt_enabled %>
-cat > /etc/salt/minion << EOF
-<%= snippet 'saltstack_minion' %>
+# make certain we put the appropriate ssh keys into root
+mkdir /root/.ssh
+chown root:root /root/.ssh
+chmod 700 /root/.ssh
+cat <<EOF >/root/.ssh/authorized_keys
+ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEA0OV0QQ14Mqx591tICwRZglJsHGUP9w+H5D01jcUVH1jTMe3mybJDcyRO3Fotx74am+WeCNFi2FezTPM1CwUUHdAKAcJb+9kN3B7rSVTcmvs5GRQgLG7QZ2U5OkDN6WUmIWTEUAqccakYzn5R0h86E96nGsFG6GkzxWz1BucRRSx6Z/tsdB9kc9DHzcxKWoijhvoc+XLBdeXlgo1AgL9lk1awg8lOPf1QkMuZA412aDKarDewUj/gUZGpnB3DwA8AkwURxUFKW5e+PB1sxN9jJB/TVR5svsqzSqTt+jBliJPoVU4Bo59X7So4CL0JTBdi48PZavaiGoWTpUCmprx3Cw== fawkes-backupppc
+ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAvmMJ2kK830HnGt9OUaSydR4cXuCyTsQFRnXxnnIxUTR+4vUQazTxcLOxsgf5wWkSNly1Q7MRkhuWJ8eFyZ4XbdS5GTTWHUoNvk0o7L8GAYlrKDSaTYFf40UWR17Aq0hPWzIT2pqPRKl3oPKTl6EED7sO7RAGhkpELODSoa84vEzQma9goJwdNEb8qF5Jh4xvCE4QFxTLfncDDDkhEI1iq4gNSbyGFsjuG4RoyMJN/yV2JVcTGMWY0JrKLx5/A2BVAZYr8NY7oM2TIbzeSG/vHhYiDA2e+JInTNehuC3PR/5YE5Y0aXqOYw5pacb5GSdyywOztSTkxp0Q1XRm2P1NuQ== root@hagrid.rexden.us
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDV9g3ZiAnnicySyhuOifTtf+PmakatC/xMRCEa2xZgrChF1+npDvM3HD6i12cOsynagwG9+pUNiTYBXGmQ1LvWTXIVZb7IuQz48bzpHUeZ4nh38USDAdo8EeVRodDZmzEUMpVX6XvnrSNvG0A2R6xjt9IwUY6FW3lvaR1tEjWHYEack/VWNu3UfzcLPCzDzFCNPwh4c8c/SpHbOPNqDtYwtsjUf8n1Xtza5/cPBUbzZFEXgYpXpaf90C/TzsXARq9CeWHP0XMSU9XlTr6SzWqNCNebQ/++W0Nh1PLA/TS+RLWTXFONOQG213liZyWBMwBeTSVPka4cwg3QeGY3qKSH /home/mobaxterm/.ssh/id_rsa
+ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAvmMJ2kK830HnGt9OUaSydR4cXuCyTsQFRnXxnnIxUTR+4vUQazTxcLOxsgf5wWkSNly1Q7MRkhuWJ8eFyZ4XbdS5GTTWHUoNvk0o7L8GAYlrKDSaTYFf40UWR17Aq0hPWzIT2pqPRKl3oPKTl6EED7sO7RAGhkpELODSoa84vEzQma9goJwdNEb8qF5Jh4xvCE4QFxTLfncDDDkhEI1iq4gNSbyGFsjuG4RoyMJN/yV2JVcTGMWY0JrKLx5/A2BVAZYr8NY7oM2TIbzeSG/vHhYiDA2e+JInTNehuC3PR/5YE5Y0aXqOYw5pacb5GSdyywOztSTkxp0Q1XRm2P1NuQ== root_management
 EOF
-# Setup salt-minion to run on system reboot
-/sbin/chkconfig --level 345 salt-minion on
-# Running salt-call to trigger key signing
-salt-call --no-color --grains >/dev/null
-<% end -%>
+chown root:root /root/.ssh/authorized_keys
+chmod 600 /root/.ssh/authorized_keys
 
 sync
 
 # Inform the build system that we are done.
 echo "Informing Foreman that we are built"
-wget -q -O /dev/null --no-check-certificate <%= foreman_url %>
+wget -q -O /dev/null --no-check-certificate <%= foreman_url('built') %>
 # Sleeping an hour for debug
 ) 2>&1 | tee /root/install.post.log
 exit 0
