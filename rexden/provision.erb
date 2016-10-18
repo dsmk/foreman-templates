@@ -98,7 +98,9 @@ repo --name=puppetlabs-pc1 --baseurl=http://yum.puppetlabs.com/el/<%= @host.oper
 bootloader --append="<%= @host.params['bootloader-append'] || 'nofb quiet splash=quiet' %> <%=ks_console%>" <%= grub_pass %>
 part biosboot --fstype=biosboot --size=1
 <% else -%>
-  bootloader --location=mbr --append="<%= @host.params['bootloader-append'] || 'nofb quiet splash=quiet' %>" <%= grub_pass %>
+bootloader --location=mbr --append="<%= @host.params['bootloader-append'] || 'nofb quiet splash=quiet' %>" <%= grub_pass %>
+<% if os_major == 5 -%>
+key --skip
 <% end -%>
 <% end -%>
 
