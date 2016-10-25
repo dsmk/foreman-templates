@@ -50,6 +50,6 @@ chmod 600 /root/.ssh/authorized_keys
 <%= snippet 'saltstack_setup' %>
 <% end -%>
 
-<%= snippet 'preseed_networking_setup' %>
+<%= snippet 'preseed_rexden_networking' %>
 /usr/bin/wget --no-proxy --quiet --output-document=/dev/null --no-check-certificate <%= foreman_url('built') %>
 
