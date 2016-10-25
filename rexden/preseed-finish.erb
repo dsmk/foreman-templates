@@ -1,0 +1,55 @@
+<%#
+kind: finish
+name: Preseed rexden finish
+oses:
+- Debian
+- Ubuntu
+%>
+<%
+  # safemode renderer does not support unary negation
+  pm_set = @host.puppetmaster.empty? ? false : true
+  puppet_enabled = pm_set || @host.param_true?('force-puppet')
+  salt_enabled = @host.params['salt_master'] ? true : false
+  chef_enabled = @host.respond_to?(:chef_proxy) && @host.chef_proxy
+%>
+
+# make certain we put the appropriate ssh keys into root
+mkdir /root/.ssh
+chown root:root /root/.ssh
+chmod 700 /root/.ssh
+cat <<EOF >/root/.ssh/authorized_keys
+ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEA0OV0QQ14Mqx591tICwRZglJsHGUP9w+H5D01jcUVH1jTMe3mybJDcyRO3Fotx74am+WeCNFi2FezTPM1CwUUHdAKAcJb+9kN3B7rSVTcmvs5GRQgLG7QZ2U5OkDN6WUmIWTEUAqccakYzn5R0h86E96nGsFG6GkzxWz1BucRRSx6Z/tsdB9kc9DHzcxKWoijhvoc+XLBdeXlgo1AgL9lk1awg8lOPf1QkMuZA412aDKarDewUj/gUZGpnB3DwA8AkwURxUFKW5e+PB1sxN9jJB/TVR5svsqzSqTt+jBliJPoVU4Bo59X7So4CL0JTBdi48PZavaiGoWTpUCmprx3Cw== fawkes-backupppc
+ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAvmMJ2kK830HnGt9OUaSydR4cXuCyTsQFRnXxnnIxUTR+4vUQazTxcLOxsgf5wWkSNly1Q7MRkhuWJ8eFyZ4XbdS5GTTWHUoNvk0o7L8GAYlrKDSaTYFf40UWR17Aq0hPWzIT2pqPRKl3oPKTl6EED7sO7RAGhkpELODSoa84vEzQma9goJwdNEb8qF5Jh4xvCE4QFxTLfncDDDkhEI1iq4gNSbyGFsjuG4RoyMJN/yV2JVcTGMWY0JrKLx5/A2BVAZYr8NY7oM2TIbzeSG/vHhYiDA2e+JInTNehuC3PR/5YE5Y0aXqOYw5pacb5GSdyywOztSTkxp0Q1XRm2P1NuQ== root@hagrid.rexden.us
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDV9g3ZiAnnicySyhuOifTtf+PmakatC/xMRCEa2xZgrChF1+npDvM3HD6i12cOsynagwG9+pUNiTYBXGmQ1LvWTXIVZb7IuQz48bzpHUeZ4nh38USDAdo8EeVRodDZmzEUMpVX6XvnrSNvG0A2R6xjt9IwUY6FW3lvaR1tEjWHYEack/VWNu3UfzcLPCzDzFCNPwh4c8c/SpHbOPNqDtYwtsjUf8n1Xtza5/cPBUbzZFEXgYpXpaf90C/TzsXARq9CeWHP0XMSU9XlTr6SzWqNCNebQ/++W0Nh1PLA/TS+RLWTXFONOQG213liZyWBMwBeTSVPka4cwg3QeGY3qKSH /home/mobaxterm/.ssh/id_rsa
+ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAvmMJ2kK830HnGt9OUaSydR4cXuCyTsQFRnXxnnIxUTR+4vUQazTxcLOxsgf5wWkSNly1Q7MRkhuWJ8eFyZ4XbdS5GTTWHUoNvk0o7L8GAYlrKDSaTYFf40UWR17Aq0hPWzIT2pqPRKl3oPKTl6EED7sO7RAGhkpELODSoa84vEzQma9goJwdNEb8qF5Jh4xvCE4QFxTLfncDDDkhEI1iq4gNSbyGFsjuG4RoyMJN/yV2JVcTGMWY0JrKLx5/A2BVAZYr8NY7oM2TIbzeSG/vHhYiDA2e+JInTNehuC3PR/5YE5Y0aXqOYw5pacb5GSdyywOztSTkxp0Q1XRm2P1NuQ== root_management
+EOF
+chown root:root /root/.ssh/authorized_keys
+chmod 600 /root/.ssh/authorized_keys
+
+# host and domain name need setting as these values may have come from dhcp if pxe booting
+/bin/sed -i "s/^search.*$/search <%= @host.domain %>/g" /etc/resolv.conf
+/bin/sed -i "s/.*dns-search.*/\tdns-search <%= @host.domain %>/g" /etc/network/interfaces
+/bin/sed -i "s/^<%= @host.ip %>.*/<%= @host.ip %>\t<%= @host.shortname %>.<%= @host.domain %>\t<%= @host.shortname %>/g" /etc/hosts
+/bin/echo <%= @host.shortname %> > /etc/hostname
+
+<% if @host.info['parameters']['realm'] && @host.realm && @host.realm.realm_type == 'FreeIPA' -%>
+<%= snippet 'freeipa_register' %>
+<% end -%>
+
+<%= snippet('remote_execution_ssh_keys') %>
+
+<% if chef_enabled %>
+<%= snippet 'chef_client' %>
+<% end -%>
+
+<% if puppet_enabled %>
+<%= snippet 'puppet_setup' %>
+<% end -%>
+
+<% if salt_enabled %>
+<%= snippet 'saltstack_setup' %>
+<% end -%>
+
+<%= snippet 'preseed_networking_setup' %>
+/usr/bin/wget --no-proxy --quiet --output-document=/dev/null --no-check-certificate <%= foreman_url('built') %>
+
