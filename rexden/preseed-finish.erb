@@ -30,7 +30,8 @@ chmod 600 /root/.ssh/authorized_keys
 /bin/sed -i "s/^search.*$/search <%= @host.domain %>/g" /etc/resolv.conf
 /bin/sed -i "s/.*dns-search.*/\tdns-search <%= @host.domain %>/g" /etc/network/interfaces
 /bin/sed -i "s/^<%= @host.ip %>.*/<%= @host.ip %>\t<%= @host.shortname %>.<%= @host.domain %>\t<%= @host.shortname %>/g" /etc/hosts
-/bin/echo <%= @host.shortname %> > /etc/hostname
+#/bin/echo <%= @host.shortname %> > /etc/hostname
+/bin/echo <%= @host %> > /etc/hostname
 
 <% if @host.info['parameters']['realm'] && @host.realm && @host.realm.realm_type == 'FreeIPA' -%>
 <%= snippet 'freeipa_register' %>
